@@ -89,35 +89,40 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Проверяем, открыли ли нас с ответом (из кнопки бота)
         const urlParams = new URLSearchParams(window.location.search);
         const answerData = urlParams.get('data');
 
         if (answerData) {
-            // --- ВКЛЮЧАЕМ РЕЖИМ ПРОСМОТРА ---
+            // --- РЕЖИМ ПРОСМОТРА ---
             document.getElementById('input-mode').style.display = 'none';
             document.getElementById('answer-mode').style.display = 'block';
             
-            // Декодируем ответ из URL
             const decodedText = decodeURIComponent(answerData);
             const displayArea = document.getElementById('answer-content');
             
-            // 1. Превращаем Markdown в HTML
+            // 1. Сначала вставляем текст как есть (Markdown обработаем позже)
+            // Это важно, чтобы Markdown не сломал формулы до того, как их найдет KaTeX
             displayArea.innerHTML = marked.parse(decodedText);
             
-            // 2. Отрисовываем формулы (LaTeX -> Красивые символы)
+            // 2. Запускаем рендеринг формул с расширенным списком разделителей
             renderMathInElement(displayArea, {
                 delimiters: [
-                    {left: '$$', right: '$$', display: true},
-                    {left: '$', right: '$', display: false},
-                    {left: '\\(', right: '\\)', display: false},
-                    {left: '\\[', right: '\\]', display: true}
+                    {left: '$$', right: '$$', display: true},  // Стандарт $$...$$
+                    {left: '$', right: '$', display: false},   // Стандарт $...$
+                    {left: '\\[', right: '\\]', display: true}, // LaTeX \[...\]
+                    {left: '\\(', right: '\\)', display: false}, // LaTeX \(...\)
+                    // Иногда LLM ошибаются и присылают без слэшей, ловим и это:
+                    {left: '[', right: ']', display: true},    
+                    //{left: '(', right: ')', display: false} // Опасно включать, может задеть обычный текст
                 ],
-                throwOnError: false
+                throwOnError: false,
+                errorColor: '#cc0000',
+                strict: false,
+                trust: true
             });
 
         } else {
-            // --- ВКЛЮЧАЕМ РЕЖИМ ВВОДА ---
+            // --- РЕЖИМ ВВОДА ---
             document.getElementById('input-mode').style.display = 'flex';
         }
 
@@ -130,7 +135,6 @@
                 return;
             }
 
-            // Упаковываем всё в JSON
             const data = JSON.stringify({
                 text: text,
                 formula: latex
@@ -141,3 +145,4 @@
     </script>
 </body>
 </html>
+
