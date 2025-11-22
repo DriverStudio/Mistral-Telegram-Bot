@@ -127,60 +127,43 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Настройка Markdown
+        // Настраиваем Markdown
         marked.use({ breaks: true, gfm: true });
 
-        // --- ЛОГИКА ВСТАВКИ ФОРМУЛЫ ---
-        function insertFormula() {
-            const mf = document.getElementById('math-input');
-            const textarea = document.getElementById('main-text');
-            const latex = mf.value;
-
-            if (!latex) return;
-
-            // Оборачиваем формулу в доллары
-            const formulaTag = " $" + latex + "$ ";
-
-            // Вставка в позицию курсора
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const text = textarea.value;
-
-            textarea.value = text.substring(0, start) + formulaTag + text.substring(end);
-            
-            // Возвращаем фокус в текстовое поле и двигаем курсор
-            textarea.focus();
-            textarea.selectionStart = textarea.selectionEnd = start + formulaTag.length;
-
-            // Очищаем поле формул для новой
-            mf.setValue(""); 
-        }
-
-        // --- ЛОГИКА ОТПРАВКИ ---
-        function sendData() {
-            const text = document.getElementById('main-text').value;
-            if (!text.trim()) {
-                tg.showPopup({title: 'Ошибка', message: 'Напишите хоть что-нибудь!'});
-                return;
-            }
-            // Теперь мы шлем просто один текст (где уже смешаны слова и формулы)
-            const data = JSON.stringify({ full_text: text });
-            tg.sendData(data);
-        }
-
-        // --- ЛОГИКА ОТОБРАЖЕНИЯ ОТВЕТА ---
-        const urlParams = new URLSearchParams(window.location.search);
-        const answerData = urlParams.get('data');
-
-        if (answerData) {
-            document.getElementById('input-mode').style.display = 'none';
-            document.getElementById('answer-mode').style.display = 'block';
-            
-            const decodedText = decodeURIComponent(answerData);
+        // --- ФУНКЦИЯ ДЛЯ БЕЗОПАСНОГО РЕНДЕРИНГА ---
+        function renderContent(text) {
             const displayArea = document.getElementById('answer-content');
             
-            displayArea.innerHTML = marked.parse(decodedText);
+            // 1. ПРЯЧЕМ ФОРМУЛЫ ОТ MARKDOWN
+            // Мы ищем $$...$$ и $...$ и заменяем их на временные метки
+            const mathBlocks = [];
             
+            // Защищаем блочные формулы $$...$$
+            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, function(match) {
+                mathBlocks.push(match);
+                return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+            });
+
+            // Защищаем строчные формулы $...$
+            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, function(match) {
+                mathBlocks.push(match);
+                return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
+            });
+
+            // 2. ПРЕВРАЩАЕМ MARKDOWN В HTML
+            let html = marked.parse(protectedText);
+
+            // 3. ВОЗВРАЩАЕМ ФОРМУЛЫ НА МЕСТО
+            html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, function(match, id) {
+                return mathBlocks[id];
+            });
+            html = html.replace(/%%%MATH_INLINE_(\d+)%%%/g, function(match, id) {
+                return mathBlocks[id];
+            });
+
+            displayArea.innerHTML = html;
+
+            // 4. РИСУЕМ ФОРМУЛЫ (Теперь они чистые и KaTeX их увидит)
             renderMathInElement(displayArea, {
                 delimiters: [
                     {left: '$$', right: '$$', display: true},
@@ -191,6 +174,52 @@
                 throwOnError: false
             });
         }
+
+        // --- ОСТАЛЬНАЯ ЛОГИКА ---
+        
+        function insertFormula() {
+            const mf = document.getElementById('math-input');
+            const textarea = document.getElementById('main-text');
+            const latex = mf.value;
+            if (!latex) return;
+            
+            // Добавляем пробелы вокруг формулы, чтобы Markdown не прилипал
+            const formulaTag = " $" + latex + "$ ";
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            textarea.value = text.substring(0, start) + formulaTag + text.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + formulaTag.length;
+            mf.setValue(""); 
+        }
+
+        function sendData() {
+            const text = document.getElementById('main-text').value;
+            if (!text.trim()) {
+                tg.showPopup({title: 'Ошибка', message: 'Напишите текст запроса'});
+                return;
+            }
+            const data = JSON.stringify({ full_text: text });
+            tg.sendData(data);
+        }
+
+        // Проверяем, пришли ли мы с ответом
+        const urlParams = new URLSearchParams(window.location.search);
+        const answerData = urlParams.get('data');
+
+        if (answerData) {
+            document.getElementById('input-mode').style.display = 'none';
+            document.getElementById('answer-mode').style.display = 'block';
+            
+            // Декодируем и запускаем нашу умную функцию
+            const decodedText = decodeURIComponent(answerData);
+            renderContent(decodedText);
+            
+        } else {
+            document.getElementById('input-mode').style.display = 'flex';
+        }
     </script>
 </body>
 </html>
+
