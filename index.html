@@ -3,66 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Редактор Формул</title>
+    <title>AI Math Editor</title>
     <script src="https://unpkg.com/mathlive"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
+
     <style>
         body {
             font-family: sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
+            background-color: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            padding: 20px;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 20px;
-            height: 100vh;
+            gap: 15px;
+        }
+        /* Стили для режима ввода */
+        #input-mode { display: flex; flex-direction: column; gap: 15px; }
+        
+        textarea {
+            width: 100%;
+            height: 80px;
+            border-radius: 12px;
+            padding: 10px;
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #000);
+            font-family: inherit;
+            resize: none;
             box-sizing: border-box;
         }
         math-field {
             width: 100%;
             font-size: 24px;
             padding: 10px;
-            border: 1px solid var(--tg-theme-hint-color, #ccc);
-            border-radius: 8px;
+            border-radius: 12px;
             background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            margin-bottom: 20px;
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
         }
         button {
             background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
+            color: var(--tg-theme-button-text-color, #fff);
             border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
-            font-size: 18px;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
             cursor: pointer;
-            width: 100%;
+            margin-top: 10px;
         }
+        
+        /* Стили для режима ответа */
+        #answer-mode { display: none; }
+        .answer-box {
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            padding: 15px;
+            border-radius: 12px;
+            line-height: 1.6;
+        }
+        h3 { margin: 0 0 10px 0; opacity: 0.7; }
     </style>
 </head>
-<body> 
-    <h3>Введите формулу:</h3>
-    
-    <math-field id="formula" virtual-keyboard-mode="onfocus">\int_0^\infty x^2 dx</math-field>
+<body>
 
-    <button onclick="sendFormula()">Отправить в чат</button>
+    <div id="input-mode">
+        <h3>Ваш запрос:</h3>
+        <textarea id="user-text" placeholder="Например: Реши это уравнение подробно..."></textarea>
+        
+        <h3>Формула:</h3>
+        <math-field id="formula" virtual-keyboard-mode="onfocus"></math-field>
+
+        <button onclick="sendData()">📤 Отправить боту</button>
+    </div>
+
+    <div id="answer-mode">
+        <h3>🎓 Ответ Mistral AI:</h3>
+        <div id="answer-content" class="answer-box"></div>
+        <button onclick="window.Telegram.WebApp.close()">Закрыть</button>
+    </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Раскрыть на весь экран
+        tg.expand();
 
-        function sendFormula() {
-            const mf = document.getElementById('formula');
-            // Получаем LaTeX код из редактора
-            const latex = mf.value;
+        // Проверяем, открыли ли нас с ответом (из кнопки бота)
+        const urlParams = new URLSearchParams(window.location.search);
+        const answerData = urlParams.get('data');
+
+        if (answerData) {
+            // --- ВКЛЮЧАЕМ РЕЖИМ ПРОСМОТРА ---
+            document.getElementById('input-mode').style.display = 'none';
+            document.getElementById('answer-mode').style.display = 'block';
             
-            // Отправляем данные обратно в бота
-            if (latex) {
-                tg.sendData(latex); 
-            } else {
-                alert("Сначала напишите формулу!");
+            // Декодируем ответ из URL
+            const decodedText = decodeURIComponent(answerData);
+            const displayArea = document.getElementById('answer-content');
+            
+            // 1. Превращаем Markdown в HTML
+            displayArea.innerHTML = marked.parse(decodedText);
+            
+            // 2. Отрисовываем формулы (LaTeX -> Красивые символы)
+            renderMathInElement(displayArea, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false},
+                    {left: '\\[', right: '\\]', display: true}
+                ],
+                throwOnError: false
+            });
+
+        } else {
+            // --- ВКЛЮЧАЕМ РЕЖИМ ВВОДА ---
+            document.getElementById('input-mode').style.display = 'flex';
+        }
+
+        function sendData() {
+            const text = document.getElementById('user-text').value;
+            const latex = document.getElementById('formula').value;
+
+            if (!text && !latex) {
+                tg.showPopup({title: 'Ошибка', message: 'Введите текст или формулу'});
+                return;
             }
+
+            // Упаковываем всё в JSON
+            const data = JSON.stringify({
+                text: text,
+                formula: latex
+            });
+            
+            tg.sendData(data);
         }
     </script>
 </body>
-
 </html>
