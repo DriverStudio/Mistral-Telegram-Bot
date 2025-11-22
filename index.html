@@ -12,7 +12,6 @@
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
 
     <style>
-        /* ... (Базовые стили остаются) ... */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: var(--tg-theme-bg-color, #fff);
@@ -21,26 +20,13 @@
             display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box;
         }
 
-        /* === ФИКС ДЛЯ ФОРМУЛ (ЧТОБЫ НЕ БЫЛО ЧЕРНЫМ) === */
+        /* === ФИКС ДЛЯ ФОРМУЛ === */
         math-field {
-            width: 100%;
-            font-size: 24px;
-            padding: 8px;
-            /* Принудительно белый фон и черный текст, чтобы было видно везде */
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            --caret-color: #000; /* Курсор черный */
+            width: 100%; font-size: 24px; padding: 8px;
+            background-color: #ffffff !important; color: #000000 !important;
+            border: 1px solid #ccc; border-radius: 8px; margin-bottom: 10px;
         }
-        /* Красим виртуальную клавиатуру в светлую тему принудительно */
-        math-field::part(virtual-keyboard-toggle) {
-            color: #000;
-        }
-
-        /* ... (Стили кнопок и инпутов из прошлого кода) ... */
-        textarea { width: 100%; height: 100px; border-radius: 12px; padding: 12px; border: 1px solid #ccc; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); resize: none; box-sizing: border-box; outline: none; }
+        textarea { width: 100%; height: 100px; border-radius: 12px; padding: 12px; border: 1px solid #ccc; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); resize: none; outline: none; box-sizing: border-box;}
         button { border: none; padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 10px; }
         .btn-insert { background: #e0e0e0; color: #333; }
         .btn-send { background: var(--tg-theme-button-color, #3390ec); color: white; }
@@ -50,35 +36,30 @@
         #admin-mode { display: none; flex-direction: column; height: 100vh; }
         .user-list { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #ccc; }
         .user-card { 
-            min-width: 120px; 
-            background: var(--tg-theme-secondary-bg-color, #eee); 
-            padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; 
-            border: 2px solid transparent;
+            min-width: 120px; background: var(--tg-theme-secondary-bg-color, #eee); 
+            padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; border: 2px solid transparent;
         }
         .user-card.active { border-color: var(--tg-theme-button-color, #3390ec); background: #fff; }
-        .user-name { font-weight: bold; font-size: 14px; display: block; overflow: hidden; text-overflow: ellipsis; }
+        .user-name { font-weight: bold; font-size: 14px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
         .user-id { font-size: 11px; opacity: 0.6; }
         
-        .chat-viewer { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; }
+        .chat-viewer { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 8px; }
         .msg { padding: 10px; border-radius: 8px; max-width: 85%; font-size: 14px; }
         .msg.user { align-self: flex-end; background: var(--tg-theme-button-color, #3390ec); color: white; }
         .msg.assistant { align-self: flex-start; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: var(--tg-theme-text-color, #000); }
         .msg-role { font-size: 10px; opacity: 0.7; margin-bottom: 4px; display: block; }
-
-        /* Скрытие блоков */
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <div id="input-mode">
-        <label>📝 Текст задачи:</label>
-        <textarea id="main-text" placeholder="Напишите запрос..."></textarea>
-        
-        <div style="margin-top: 15px;">
-            <label>🧮 Формула (фон исправлен):</label>
+        <label>📝 Текст:</label>
+        <textarea id="main-text" placeholder="Введите запрос..."></textarea>
+        <div>
+            <label>🧮 Формула:</label>
             <math-field id="math-input" virtual-keyboard-mode="onfocus"></math-field>
-            <button class="btn-insert" onclick="insertFormula()">⬆️ Вставить формулу</button>
+            <button class="btn-insert" onclick="insertFormula()">⬆️ Вставить</button>
         </div>
         <button class="btn-send" onclick="sendData()">✈️ Отправить</button>
     </div>
@@ -90,13 +71,11 @@
     </div>
 
     <div id="admin-mode">
-        <h3>👑 Панель Администратора</h3>
-        <div id="loading-admin">Загрузка базы...</div>
-        
+        <h3>👑 Dashboard</h3>
+        <div id="loading-admin">Загрузка...</div>
         <div id="users-container" class="user-list hidden"></div>
-        
         <div id="chat-container" class="chat-viewer hidden">
-            <div style="text-align: center; opacity: 0.5; margin-top: 20px;">Выберите пользователя</div>
+            <div style="text-align: center; opacity: 0.5; margin-top: 20px;">Выберите чат</div>
         </div>
     </div>
 
@@ -105,121 +84,102 @@
         tg.expand();
         marked.use({ breaks: true, gfm: true });
 
-        // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Рендер формул) ---
-        function renderContent(text, elementId = 'answer-content') {
-            const displayArea = document.getElementById(elementId);
-            const mathBlocks = [];
-            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, (m) => { mathBlocks.push(m); return '%%%BLK'+(mathBlocks.length-1)+'%%%'; });
-            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, (m) => { mathBlocks.push(m); return '%%%INL'+(mathBlocks.length-1)+'%%%'; });
-            
-            let html = marked.parse(protectedText);
-            html = html.replace(/%%%BLK(\d+)%%%/g, (m, id) => mathBlocks[id]).replace(/%%%INL(\d+)%%%/g, (m, id) => mathBlocks[id]);
-            
-            displayArea.innerHTML = html;
-            renderMathInElement(displayArea, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false });
+        function renderContent(text, elId='answer-content') {
+            const da = document.getElementById(elId);
+            const mb = [];
+            let pt = text.replace(/\$\$([\s\S]*?)\$\$/g, m=>{mb.push(m);return '%%%B'+(mb.length-1)+'%%%'});
+            pt = pt.replace(/\$([\s\S]*?)\$/g, m=>{mb.push(m);return '%%%I'+(mb.length-1)+'%%%'});
+            let html = marked.parse(pt);
+            html = html.replace(/%%%B(\d+)%%%/g, (m,i)=>mb[i]).replace(/%%%I(\d+)%%%/g, (m,i)=>mb[i]);
+            da.innerHTML = html;
+            renderMathInElement(da, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});
         }
 
-        // --- ЛОГИКА ВВОДА ---
         function insertFormula() {
-            const mf = document.getElementById('math-input');
-            const ta = document.getElementById('main-text');
-            if (!mf.value) return;
-            const tag = " $" + mf.value + "$ ";
-            const start = ta.selectionStart;
-            ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionEnd);
-            ta.focus(); ta.selectionStart = start + tag.length; mf.setValue(""); 
+            const mf = document.getElementById('math-input'), ta = document.getElementById('main-text');
+            if(!mf.value) return;
+            const tag=" $"+mf.value+"$ ", s=ta.selectionStart;
+            ta.value=ta.value.slice(0,s)+tag+ta.value.slice(ta.selectionEnd);
+            ta.focus(); ta.selectionStart=s+tag.length; mf.setValue("");
         }
         function sendData() {
-            const text = document.getElementById('main-text').value;
-            if (!text.trim()) return tg.showPopup({message: 'Пусто!'});
-            tg.sendData(JSON.stringify({ full_text: text }));
+            const t=document.getElementById('main-text').value;
+            if(!t.trim()) return tg.showPopup({message:'Пусто!'});
+            tg.sendData(JSON.stringify({full_text:t}));
         }
 
-        // --- ГЛАВНЫЙ РОУТЕР ---
         const params = new URLSearchParams(window.location.search);
-        const adminBinId = params.get('adminBinId'); // Если есть это - мы Админ
-        const dataId = params.get('binId');          // Если есть это - мы смотрим ответ
-        const directData = params.get('data');
+        const adminId = params.get('adminBinId'), dataId = params.get('binId'), direct = params.get('data');
 
-        if (adminBinId) {
-            // === РЕЖИМ АДМИНА ===
+        if(adminId) {
             document.getElementById('input-mode').classList.add('hidden');
             document.getElementById('admin-mode').style.display = 'flex';
-            loadAdminData(adminBinId);
-
-        } else if (dataId || directData) {
-            // === РЕЖИМ ПРОСМОТРА ОТВЕТА ===
-            document.getElementById('input-mode').classList.add('hidden');
-            document.getElementById('answer-mode').classList.remove('hidden');
-            if (directData) {
-                renderContent(decodeURIComponent(directData));
-            } else {
-                fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`).then(r=>r.json()).then(j => {
-                    renderContent(j.record.answer || j.answer);
-                });
-            }
-        }
-
-        // --- ЛОГИКА АДМИНКИ ---
-        function loadAdminData(binId) {
-            fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {headers: {'X-Bin-Meta': 'false'}})
-            .then(r => r.json())
-            .then(db => {
+            
+            // === ИСПРАВЛЕННАЯ ЗАГРУЗКА АДМИНКИ ===
+            fetch(`https://api.jsonbin.io/v3/b/${adminId}/latest`, {headers:{'X-Bin-Meta':'false'}})
+            .then(r=>r.json())
+            .then(json => {
+                // Jsonbin может вернуть { "record": { ... } } или просто { ... }
+                // Берем правильный объект с данными
+                const realDb = json.record || json;
+                
                 document.getElementById('loading-admin').classList.add('hidden');
                 document.getElementById('users-container').classList.remove('hidden');
                 document.getElementById('chat-container').classList.remove('hidden');
-                renderUserList(db);
+                renderUserList(realDb);
             })
-            .catch(e => document.getElementById('loading-admin').innerText = "Ошибка: " + e);
+            .catch(e => document.getElementById('loading-admin').innerHTML = "Ошибка: "+e);
+
+        } else if(dataId || direct) {
+            document.getElementById('input-mode').classList.add('hidden');
+            document.getElementById('answer-mode').classList.remove('hidden');
+            if(direct) renderContent(decodeURIComponent(direct));
+            else fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`).then(r=>r.json()).then(j=>{
+                renderContent(j.record?.answer || j.answer || JSON.stringify(j));
+            });
         }
 
         function renderUserList(db) {
-            const container = document.getElementById('users-container');
-            container.innerHTML = "";
+            const c = document.getElementById('users-container');
+            c.innerHTML = "";
             
-            // db = { chat_id: { name: "...", history: [...] }, ... }
-            Object.keys(db).forEach(userId => {
-                const user = db[userId];
+            // Фильтруем ключи, чтобы не показать системные поля (metadata, record и т.д.)
+            const userIds = Object.keys(db).filter(k => k !== 'metadata' && k !== 'record' && typeof db[k] === 'object');
+            
+            if(userIds.length === 0) {
+                c.innerHTML = "<div style='padding:10px'>Нет данных</div>";
+                return;
+            }
+
+            userIds.forEach(uid => {
+                const u = db[uid];
                 const card = document.createElement('div');
                 card.className = 'user-card';
-                card.innerHTML = `<span class="user-name">${user.name || 'Без имени'}</span><span class="user-id">${userId}</span>`;
-                
+                // Защита от пустого имени
+                const name = u.name ? u.name : 'Без имени';
+                card.innerHTML = `<span class="user-name">${name}</span><span class="user-id">${uid}</span>`;
                 card.onclick = () => {
-                    // Снимаем выделение со всех
-                    document.querySelectorAll('.user-card').forEach(c => c.classList.remove('active'));
+                    document.querySelectorAll('.user-card').forEach(x=>x.classList.remove('active'));
                     card.classList.add('active');
-                    renderChat(user.history);
+                    renderChat(u.history || []);
                 };
-                container.appendChild(card);
+                c.appendChild(card);
             });
         }
 
-        function renderChat(history) {
-            const chatDiv = document.getElementById('chat-container');
-            chatDiv.innerHTML = "";
-            if (!history || history.length === 0) {
-                chatDiv.innerHTML = "<div style='text-align:center'>История пуста</div>";
-                return;
-            }
-            
-            history.forEach(msg => {
-                const bubble = document.createElement('div');
-                bubble.className = `msg ${msg.role}`;
-                // Защита от XSS (вставляем как текст)
-                const roleName = msg.role === 'user' ? 'Пользователь' : 'AI';
-                bubble.innerHTML = `<span class="msg-role">${roleName}</span><div class="content"></div>`;
-                
-                // Рендерим контент (Markdown + Math) внутри
-                // ВАЖНО: создаем уникальный ID для каждого сообщения, чтобы renderContent сработал
-                const uniqueId = 'msg-' + Math.random().toString(36).substr(2, 9);
-                bubble.querySelector('.content').id = uniqueId;
-                chatDiv.appendChild(bubble);
-                
-                renderContent(msg.content, uniqueId);
+        function renderChat(h) {
+            const d = document.getElementById('chat-container');
+            d.innerHTML = "";
+            if(!h || h.length===0) return d.innerHTML="<div style='text-align:center;margin-top:20px'>Пусто</div>";
+            h.forEach(m => {
+                const b = document.createElement('div');
+                b.className = `msg ${m.role}`;
+                const uid = 'msg-'+Math.random().toString(36).substr(2,9);
+                b.innerHTML = `<span class="msg-role">${m.role==='user'?'Пользователь':'AI'}</span><div id="${uid}"></div>`;
+                d.appendChild(b);
+                renderContent(m.content, uid);
             });
-            
-            // Прокрутка вниз
-            chatDiv.scrollTop = chatDiv.scrollHeight;
+            d.scrollTop = d.scrollHeight;
         }
     </script>
 </body>
