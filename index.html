@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Math Editor</title>
+    <title>Smart AI Math Editor</title>
+    
     <script src="https://unpkg.com/mathlive"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -12,157 +13,245 @@
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
 
     <style>
+        /* 2. Стили (CSS) - Адаптация под тему Телеграма */
         body {
-            font-family: sans-serif;
-            background-color: var(--tg-theme-bg-color, #fff);
-            color: var(--tg-theme-text-color, #000);
-            padding: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 16px;
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            min-height: 100vh;
             box-sizing: border-box;
         }
+
+        h3 { margin-top: 0; font-size: 18px; opacity: 0.8; }
+        label { font-weight: 600; font-size: 14px; display: block; margin-bottom: 8px; opacity: 0.9; }
 
         /* --- РЕЖИМ ВВОДА --- */
         #input-mode {
             display: flex;
             flex-direction: column;
+            gap: 20px;
             flex-grow: 1;
-            gap: 10px;
         }
 
-        label { font-weight: bold; font-size: 14px; opacity: 0.8; }
-
-        /* Основное текстовое поле */
+        /* Текстовое поле */
         #main-text {
             width: 100%;
             height: 120px;
             border-radius: 12px;
             padding: 12px;
-            border: 2px solid var(--tg-theme-hint-color, #ccc);
-            background: var(--tg-theme-secondary-bg-color, #f9f9f9);
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
             color: var(--tg-theme-text-color, #000);
             font-size: 16px;
             font-family: inherit;
             resize: none;
             box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
         }
-        #main-text:focus { border-color: var(--tg-theme-button-color, #3390ec); outline: none; }
-
-        /* Поле конструктора формул */
-        .math-builder {
-            border: 1px solid #eee;
-            padding: 10px;
-            border-radius: 12px;
+        #main-text:focus {
+            border-color: var(--tg-theme-button-color, #3390ec);
             background: var(--tg-theme-bg-color, #fff);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        /* Контейнер для формул */
+        .math-builder {
+            border: 1px solid var(--tg-theme-hint-color, #eee);
+            padding: 12px;
+            border-radius: 12px;
+            background: var(--tg-theme-section-bg-color, #fff);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
         math-field {
             width: 100%;
-            font-size: 22px;
+            font-size: 24px;
             padding: 8px;
-            background: #fff;
-            border: 1px solid #ddd;
+            background: var(--tg-theme-bg-color, #fff);
+            border: 1px solid var(--tg-theme-hint-color, #ddd);
             border-radius: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            color: #000; /* MathLive лучше выглядит с черным текстом даже в темной теме */
         }
 
         /* Кнопки */
-        .btn-group { display: flex; gap: 10px; }
-        
         button {
             border: none;
-            padding: 12px;
+            padding: 14px;
             border-radius: 10px;
             font-size: 16px;
-            font-weight: bold;
+            font-weight: 600;
             cursor: pointer;
             width: 100%;
+            transition: opacity 0.2s;
         }
+        button:active { opacity: 0.8; }
+
         .btn-insert {
-            background-color: var(--tg-theme-hint-color, #888);
-            color: #fff;
+            background-color: var(--tg-theme-secondary-bg-color, #e0e0e0);
+            color: var(--tg-theme-text-color, #333);
+            font-size: 14px;
         }
         .btn-send {
             background-color: var(--tg-theme-button-color, #3390ec);
             color: var(--tg-theme-button-text-color, #fff);
-            height: 50px;
-            margin-top: auto; /* Прижимает кнопку к низу */
+            margin-top: auto;
+            box-shadow: 0 4px 12px rgba(51, 144, 236, 0.3);
+        }
+        .btn-close {
+            background-color: var(--tg-theme-secondary-bg-color, #e0e0e0);
+            color: var(--tg-theme-text-color, #333);
+            margin-top: 20px;
         }
 
         /* --- РЕЖИМ ОТВЕТА --- */
-        #answer-mode { display: none; padding-bottom: 20px;}
+        #answer-mode { display: none; padding-bottom: 40px; }
+        
         .answer-box {
-            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            padding: 20px;
+            background: var(--tg-theme-section-bg-color, #ffffff);
+            padding: 16px;
             border-radius: 12px;
             line-height: 1.6;
             font-size: 16px;
+            word-wrap: break-word;
+            /* Рамка для контраста */
+            border: 1px solid var(--tg-theme-hint-color, #eee); 
+        }
+        
+        /* Исправления для Markdown таблиц и кода */
+        .answer-box pre {
+            background: #333;
+            color: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .answer-box blockquote {
+            border-left: 4px solid var(--tg-theme-button-color, #3390ec);
+            margin: 0;
+            padding-left: 10px;
+            opacity: 0.8;
         }
     </style>
 </head>
 <body>
 
     <div id="input-mode">
-        <label>1. Ваш текст:</label>
-        <textarea id="main-text" placeholder="Напишите задачу здесь..."></textarea>
+        <div>
+            <label>📝 Текст задачи:</label>
+            <textarea id="main-text" placeholder="Например: Найди корни уравнения, если..."></textarea>
+        </div>
 
         <div class="math-builder">
-            <label>2. Конструктор формул:</label>
+            <label>🧮 Конструктор формул:</label>
             <math-field id="math-input" virtual-keyboard-mode="onfocus"></math-field>
             <button class="btn-insert" onclick="insertFormula()">⬆️ Вставить формулу в текст</button>
         </div>
 
-        <button class="btn-send" onclick="sendData()">✈️ Отправить боту</button>
+        <button class="btn-send" onclick="sendData()">✈️ Отправить в Mistral AI</button>
     </div>
 
     <div id="answer-mode">
         <h3>🎓 Решение:</h3>
-        <div id="answer-content" class="answer-box"></div>
-        <br>
-        <button class="btn-send" onclick="window.Telegram.WebApp.close()">Закрыть</button>
+        <div id="answer-content" class="answer-box">
+            </div>
+        <button class="btn-close" onclick="window.Telegram.WebApp.close()">Закрыть</button>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand();
+        tg.expand(); // Раскрываем на весь экран
+
+        // Настройка Markdown (включаем переносы строк)
         marked.use({ breaks: true, gfm: true });
 
-        // --- ФУНКЦИЯ РЕНДЕРИНГА (Оставляем ту же самую мощную) ---
+        // --- ФУНКЦИЯ 1: БЕЗОПАСНЫЙ РЕНДЕРИНГ (Защита формул от Markdown) ---
         function renderContent(text) {
             const displayArea = document.getElementById('answer-content');
             const mathBlocks = [];
             
-            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, function(m) {
-                mathBlocks.push(m); return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+            // 1. Ищем формулы и прячем их в массив, заменяя на метки %%%MATH...%%%
+            // Сначала блочные $$...$$
+            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, function(match) {
+                mathBlocks.push(match);
+                return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
             });
-            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, function(m) {
-                mathBlocks.push(m); return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
+            // Затем строчные $...$
+            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, function(match) {
+                mathBlocks.push(match);
+                return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
             });
 
+            // 2. Превращаем Markdown в HTML (теперь формулы в безопасности)
             let html = marked.parse(protectedText);
 
-            html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, (m, id) => mathBlocks[id]);
-            html = html.replace(/%%%MATH_INLINE_(\d+)%%%/g, (m, id) => mathBlocks[id]);
+            // 3. Возвращаем формулы на место
+            html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, function(match, id) {
+                return mathBlocks[id];
+            });
+            html = html.replace(/%%%MATH_INLINE_(\d+)%%%/g, function(match, id) {
+                return mathBlocks[id];
+            });
 
             displayArea.innerHTML = html;
 
+            // 4. Запускаем отрисовку формул через KaTeX
             renderMathInElement(displayArea, {
                 delimiters: [
-                    {left: '$$', right: '$$', display: true},
-                    {left: '$', right: '$', display: false},
-                    {left: '\\(', right: '\\)', display: false},
+                    {left: '$$', right: '$$', display: true},   // Блочные
+                    {left: '$', right: '$', display: false},    // Строчные
+                    {left: '\\(', right: '\\)', display: false}, // LaTeX скобки
                     {left: '\\[', right: '\\]', display: true}
                 ],
                 throwOnError: false
             });
         }
 
-        // ... (Функции ввода insertFormula и sendData оставляем без изменений) ...
-        function insertFormula() { /* ваш старый код */ const mf = document.getElementById('math-input'); const ta = document.getElementById('main-text'); if (!mf.value) return; const tag = " $" + mf.value + "$ "; const start = ta.selectionStart; ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionEnd); ta.focus(); ta.selectionStart = start + tag.length; mf.setValue(""); }
-        function sendData() { const text = document.getElementById('main-text').value; if (!text.trim()) return tg.showPopup({message: 'Пусто!'}); tg.sendData(JSON.stringify({ full_text: text })); }
+        // --- ФУНКЦИЯ 2: ВСТАВКА ФОРМУЛЫ В ТЕКСТ ---
+        function insertFormula() {
+            const mf = document.getElementById('math-input');
+            const textarea = document.getElementById('main-text');
+            const latex = mf.value;
 
-        // --- ГЛАВНАЯ ЛОГИКА ЗАГРУЗКИ ---
+            if (!latex) return;
+
+            // Добавляем пробелы и доллары
+            const formulaTag = " $" + latex + "$ ";
+            
+            // Вставляем в позицию курсора
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+
+            textarea.value = text.substring(0, start) + formulaTag + text.substring(end);
+            
+            // Возвращаем фокус
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + formulaTag.length;
+
+            // Очищаем поле формул
+            mf.setValue(""); 
+        }
+
+        // --- ФУНКЦИЯ 3: ОТПРАВКА ДАННЫХ БОТУ ---
+        function sendData() {
+            const text = document.getElementById('main-text').value;
+            
+            if (!text.trim()) {
+                tg.showPopup({title: 'Внимание', message: 'Напишите текст задачи или вставьте формулу'});
+                return;
+            }
+            
+            // Отправляем единый текст
+            const data = JSON.stringify({ full_text: text });
+            tg.sendData(data);
+        }
+
+        // --- ГЛАВНАЯ ЛОГИКА ЗАГРУЗКИ (ГИБРИДНАЯ СИСТЕМА) ---
+        // Проверяем URL параметры
         const urlParams = new URLSearchParams(window.location.search);
         const directData = urlParams.get('data');
         const binId = urlParams.get('binId');
@@ -171,38 +260,53 @@
         const answerDiv = document.getElementById('answer-mode');
 
         if (directData) {
-            // ВАРИАНТ 1: Данные пришли прямо в ссылке (Короткий ответ)
+            // СЦЕНАРИЙ А: Данные пришли прямо в ссылке (Короткий ответ)
+            console.log("Режим: Прямые данные");
             inputDiv.style.display = 'none';
             answerDiv.style.display = 'block';
+            
             try {
-                renderContent(decodeURIComponent(directData));
-            } catch (e) { answerDiv.innerHTML = "Ошибка декодирования"; }
+                const decodedText = decodeURIComponent(directData);
+                renderContent(decodedText);
+            } catch (e) {
+                answerDiv.innerHTML = `<p style="color:red">Ошибка чтения данных: ${e}</p>`;
+            }
 
         } else if (binId) {
-            // ВАРИАНТ 2: Пришел ID, нужно скачать из облака (Длинный ответ)
+            // СЦЕНАРИЙ Б: Пришел ID, качаем из Jsonbin (Длинный ответ)
+            console.log("Режим: Облако (Jsonbin)");
             inputDiv.style.display = 'none';
             answerDiv.style.display = 'block';
-            document.getElementById('answer-content').innerHTML = "⏳ <b>Скачиваю полное решение из облака...</b>";
+            
+            const loadingMsg = document.getElementById('answer-content');
+            loadingMsg.innerHTML = "⏳ <b>Загружаю полное решение из облака...</b>";
 
-            // Делаем запрос к Jsonbin
-            fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`)
-                .then(response => response.json())
-                .then(json => {
-                    // Jsonbin возвращает структуру { record: { answer: "..." } }
-                    const text = json.record.answer;
-                    renderContent(text);
-                })
-                .catch(err => {
-                    document.getElementById('answer-content').innerHTML = 
-                    `❌ Ошибка загрузки: ${err}.<br>Попробуйте закрыть и открыть снова.`;
-                });
+            // Запрос к публичному бину
+            fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+                method: 'GET',
+                headers: {
+                    'X-Bin-Meta': 'false' // Чтобы получить чистый JSON без метаданных
+                }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error("Ошибка сети или ID");
+                return response.json();
+            })
+            .then(json => {
+                // Jsonbin может вернуть структуру по-разному, страхуемся
+                // Обычно мы клали текст в поле "answer"
+                const text = json.answer || json.record?.answer || JSON.stringify(json);
+                renderContent(text);
+            })
+            .catch(err => {
+                loadingMsg.innerHTML = `❌ <b>Не удалось загрузить решение.</b><br>Детали: ${err}`;
+            });
 
         } else {
-            // ВАРИАНТ 3: Обычный вход
+            // СЦЕНАРИЙ В: Обычный вход (Ввод данных)
+            console.log("Режим: Ввод");
             inputDiv.style.display = 'flex';
         }
     </script>
 </body>
 </html>
-
-
