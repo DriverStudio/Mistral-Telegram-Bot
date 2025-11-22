@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Editor & Dashboard</title>
+    <title>AI Dashboard</title>
     <script src="https://unpkg.com/mathlive"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -20,11 +20,17 @@
             display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box;
         }
 
+        /* === ФИКС ДЛЯ ФОРМУЛ (ПРИНУДИТЕЛЬНО БЕЛЫЙ) === */
         math-field {
             width: 100%; font-size: 24px; padding: 8px;
-            background-color: #ffffff !important; color: #000000 !important;
+            background: white !important; color: black !important;
             border: 1px solid #ccc; border-radius: 8px; margin-bottom: 10px;
+            /* Переменные для MathLive Shadow DOM */
+            --keyboard-background: #f0f0f0;
+            --key-background: #fff;
+            --key-text: #000;
         }
+        
         textarea { width: 100%; height: 100px; border-radius: 12px; padding: 12px; border: 1px solid #ccc; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); resize: none; outline: none; box-sizing: border-box;}
         button { border: none; padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 10px; }
         .btn-insert { background: #e0e0e0; color: #333; }
@@ -42,16 +48,21 @@
         .user-name { font-weight: bold; font-size: 14px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
         .user-id { font-size: 11px; opacity: 0.6; }
         
+        /* Чат */
         .chat-viewer { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 8px; }
         .msg { padding: 10px; border-radius: 8px; max-width: 85%; font-size: 14px; }
         .msg.user { align-self: flex-end; background: var(--tg-theme-button-color, #3390ec); color: white; }
         .msg.assistant { align-self: flex-start; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: var(--tg-theme-text-color, #000); }
         .msg-role { font-size: 10px; opacity: 0.7; margin-bottom: 4px; display: block; }
         .hidden { display: none !important; }
+        
+        /* Запрос в ответе */
+        .query-quote { border-left: 3px solid #ccc; padding-left: 10px; margin-bottom: 10px; opacity: 0.7; font-size: 0.9em; }
     </style>
 </head>
 <body>
 
+    <!-- РЕЖИМ ВВОДА -->
     <div id="input-mode">
         <label>📝 Текст:</label>
         <textarea id="main-text" placeholder="Введите запрос..."></textarea>
@@ -63,14 +74,19 @@
         <button class="btn-send" onclick="sendData()">✈️ Отправить</button>
     </div>
 
+    <!-- РЕЖИМ ОТВЕТА -->
     <div id="answer-mode" class="hidden">
         <h3>🎓 Решение:</h3>
         <div id="answer-content" class="answer-box"></div>
         <button style="background: #ccc; color: #333;" onclick="window.Telegram.WebApp.close()">Закрыть</button>
     </div>
 
+    <!-- РЕЖИМ АДМИНА -->
     <div id="admin-mode">
-        <h3>👑 Dashboard</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>👑 Dashboard</h3>
+            <button onclick="showDebug()" style="width:auto; padding:5px 10px; font-size:12px; margin:0;">🐞</button>
+        </div>
         <div id="loading-admin">Загрузка...</div>
         <div id="users-container" class="user-list hidden"></div>
         <div id="chat-container" class="chat-viewer hidden">
@@ -82,13 +98,17 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         marked.use({ breaks: true, gfm: true });
+        let rawAdminData = null; // Для отладки
 
         function renderContent(text, elId='answer-content') {
             const da = document.getElementById(elId);
             const mb = [];
+            // Прячем формулы перед Markdown
             let pt = text.replace(/\$\$([\s\S]*?)\$\$/g, m=>{mb.push(m);return '%%%B'+(mb.length-1)+'%%%'});
             pt = pt.replace(/\$([\s\S]*?)\$/g, m=>{mb.push(m);return '%%%I'+(mb.length-1)+'%%%'});
+            
             let html = marked.parse(pt);
+            // Возвращаем формулы
             html = html.replace(/%%%B(\d+)%%%/g, (m,i)=>mb[i]).replace(/%%%I(\d+)%%%/g, (m,i)=>mb[i]);
             da.innerHTML = html;
             renderMathInElement(da, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false});
@@ -106,64 +126,62 @@
             if(!t.trim()) return tg.showPopup({message:'Пусто!'});
             tg.sendData(JSON.stringify({full_text:t}));
         }
+        function showDebug() {
+            if(rawAdminData) alert(JSON.stringify(rawAdminData).substring(0, 500));
+            else alert("Нет данных");
+        }
 
+        // === ГЛАВНАЯ ЛОГИКА ЗАГРУЗКИ ===
         const params = new URLSearchParams(window.location.search);
         const adminId = params.get('adminBinId'), dataId = params.get('binId'), direct = params.get('data');
 
         if(adminId) {
-            // АДМИНКА
+            // === АДМИНКА ===
             document.getElementById('input-mode').classList.add('hidden');
             document.getElementById('admin-mode').style.display = 'flex';
             
-            // УБРАЛИ HEADERS (CORS FIX)
+            // Запрос без заголовков (GET)
             fetch(`https://api.jsonbin.io/v3/b/${adminId}/latest`)
             .then(r=>r.json())
             .then(json => {
-                // Разбираем структуру Jsonbin
-                // Она может быть { record: {...}, metadata: {...} }
-                const realDb = json.record || json;
+                rawAdminData = json; // Сохраняем для отладки
+                // JSONBin всегда возвращает { record: ... } в V3
+                const db = json.record || json; 
                 
                 document.getElementById('loading-admin').classList.add('hidden');
                 document.getElementById('users-container').classList.remove('hidden');
                 document.getElementById('chat-container').classList.remove('hidden');
-                renderUserList(realDb);
+                renderUserList(db);
             })
-            .catch(e => document.getElementById('loading-admin').innerHTML = "Ошибка (CORS/Net): "+e);
+            .catch(e => document.getElementById('loading-admin').innerHTML = "Ошибка загрузки: "+e);
 
         } else if(dataId || direct) {
-            // ПРОСМОТР РЕШЕНИЯ
+            // === ПРОСМОТР РЕШЕНИЯ ===
             document.getElementById('input-mode').classList.add('hidden');
             document.getElementById('answer-mode').classList.remove('hidden');
             
             if(direct) {
                 renderContent(decodeURIComponent(direct));
             } else {
-                // УБРАЛИ HEADERS
-                fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`)
-                .then(r=>r.json())
-                .then(j => {
-                    // Тут мы ищем ответ. В новом питоне мы сохраняем { "answer": "...", "query": "..." }
+                fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`).then(r=>r.json()).then(j=>{
                     const rec = j.record || j;
+                    // Если это новый формат с полями query/answer
                     const ans = rec.answer || rec; 
+                    const query = rec.query ? `<div class="query-quote"><b>Запрос:</b> ${rec.query}</div>` : "";
                     
-                    // Если хотим показать и запрос тоже:
-                    let finalHtml = "";
-                    if(rec.query) finalHtml += `<blockquote>${rec.query}</blockquote><hr>`;
-                    finalHtml += ans;
-
-                    renderContent(finalHtml);
-                })
-                .catch(e => document.getElementById('answer-content').innerHTML="Ошибка: "+e);
+                    renderContent(query + ans);
+                });
             }
         }
 
         function renderUserList(db) {
             const c = document.getElementById('users-container');
             c.innerHTML = "";
-            const userIds = Object.keys(db).filter(k => k !== 'metadata' && k !== 'record' && typeof db[k] === 'object');
+            // Фильтруем только ID пользователей (объекты)
+            const userIds = Object.keys(db).filter(k => typeof db[k] === 'object' && k !== 'metadata');
             
             if(userIds.length === 0) {
-                c.innerHTML = "<div style='padding:10px'>Нет данных или старая база</div>";
+                c.innerHTML = "<div style='padding:10px'>Нет пользователей в базе</div>";
                 return;
             }
 
@@ -171,7 +189,9 @@
                 const u = db[uid];
                 const card = document.createElement('div');
                 card.className = 'user-card';
-                const name = u.name ? u.name : 'Без имени';
+                // Защита: ищем имя в разных местах
+                const name = u.name || 'User ' + uid;
+                
                 card.innerHTML = `<span class="user-name">${name}</span><span class="user-id">${uid}</span>`;
                 card.onclick = () => {
                     document.querySelectorAll('.user-card').forEach(x=>x.classList.remove('active'));
