@@ -128,7 +128,7 @@
         tg.expand();
         marked.use({ breaks: true, gfm: true });
 
-        // --- ФУНКЦИЯ РЕНДЕРИНГА (Та самая, с защитой формул) ---
+        // --- ФУНКЦИЯ РЕНДЕРИНГА (Оставляем ту же самую мощную) ---
         function renderContent(text) {
             const displayArea = document.getElementById('answer-content');
             const mathBlocks = [];
@@ -158,47 +158,51 @@
             });
         }
 
-        // --- ФУНКЦИИ ВВОДА ---
-        function insertFormula() {
-            const mf = document.getElementById('math-input');
-            const ta = document.getElementById('main-text');
-            if (!mf.value) return;
-            const tag = " $" + mf.value + "$ ";
-            const start = ta.selectionStart;
-            ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionEnd);
-            ta.focus();
-            ta.selectionStart = start + tag.length;
-            mf.setValue(""); 
-        }
+        // ... (Функции ввода insertFormula и sendData оставляем без изменений) ...
+        function insertFormula() { /* ваш старый код */ const mf = document.getElementById('math-input'); const ta = document.getElementById('main-text'); if (!mf.value) return; const tag = " $" + mf.value + "$ "; const start = ta.selectionStart; ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionEnd); ta.focus(); ta.selectionStart = start + tag.length; mf.setValue(""); }
+        function sendData() { const text = document.getElementById('main-text').value; if (!text.trim()) return tg.showPopup({message: 'Пусто!'}); tg.sendData(JSON.stringify({ full_text: text })); }
 
-        function sendData() {
-            const text = document.getElementById('main-text').value;
-            if (!text.trim()) return tg.showPopup({message: 'Введите текст'});
-            tg.sendData(JSON.stringify({ full_text: text }));
-        }
-
-        // --- ЗАПУСК (С ЗАЩИТОЙ ОТ ОШИБОК ДЛИНЫ) ---
+        // --- ГЛАВНАЯ ЛОГИКА ЗАГРУЗКИ ---
         const urlParams = new URLSearchParams(window.location.search);
-        const answerData = urlParams.get('data');
+        const directData = urlParams.get('data');
+        const binId = urlParams.get('binId');
 
-        if (answerData) {
-            document.getElementById('input-mode').style.display = 'none';
-            document.getElementById('answer-mode').style.display = 'block';
-            
+        const inputDiv = document.getElementById('input-mode');
+        const answerDiv = document.getElementById('answer-mode');
+
+        if (directData) {
+            // ВАРИАНТ 1: Данные пришли прямо в ссылке (Короткий ответ)
+            inputDiv.style.display = 'none';
+            answerDiv.style.display = 'block';
             try {
-                const decodedText = decodeURIComponent(answerData);
-                renderContent(decodedText);
-            } catch (e) {
-                // Если ссылка слишком длинная и обрезалась
-                document.getElementById('answer-content').innerHTML = 
-                `<p style="color:red">⚠️ Ошибка отображения: Ссылка была обрезана браузером.<br>
-                Попробуйте разбить вопрос на части.</p>`;
-                console.error(e);
-            }
-            
+                renderContent(decodeURIComponent(directData));
+            } catch (e) { answerDiv.innerHTML = "Ошибка декодирования"; }
+
+        } else if (binId) {
+            // ВАРИАНТ 2: Пришел ID, нужно скачать из облака (Длинный ответ)
+            inputDiv.style.display = 'none';
+            answerDiv.style.display = 'block';
+            document.getElementById('answer-content').innerHTML = "⏳ <b>Скачиваю полное решение из облака...</b>";
+
+            // Делаем запрос к Jsonbin
+            fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`)
+                .then(response => response.json())
+                .then(json => {
+                    // Jsonbin возвращает структуру { record: { answer: "..." } }
+                    const text = json.record.answer;
+                    renderContent(text);
+                })
+                .catch(err => {
+                    document.getElementById('answer-content').innerHTML = 
+                    `❌ Ошибка загрузки: ${err}.<br>Попробуйте закрыть и открыть снова.`;
+                });
+
         } else {
-            document.getElementById('input-mode').style.display = 'flex';
+            // ВАРИАНТ 3: Обычный вход
+            inputDiv.style.display = 'flex';
         }
     </script>
+</body>
+</html>
 
 
