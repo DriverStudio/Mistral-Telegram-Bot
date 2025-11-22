@@ -126,44 +126,27 @@
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
-
-        // Настраиваем Markdown
         marked.use({ breaks: true, gfm: true });
 
-        // --- ФУНКЦИЯ ДЛЯ БЕЗОПАСНОГО РЕНДЕРИНГА ---
+        // --- ФУНКЦИЯ РЕНДЕРИНГА (Та самая, с защитой формул) ---
         function renderContent(text) {
             const displayArea = document.getElementById('answer-content');
-            
-            // 1. ПРЯЧЕМ ФОРМУЛЫ ОТ MARKDOWN
-            // Мы ищем $$...$$ и $...$ и заменяем их на временные метки
             const mathBlocks = [];
             
-            // Защищаем блочные формулы $$...$$
-            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, function(match) {
-                mathBlocks.push(match);
-                return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, function(m) {
+                mathBlocks.push(m); return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+            });
+            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, function(m) {
+                mathBlocks.push(m); return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
             });
 
-            // Защищаем строчные формулы $...$
-            protectedText = protectedText.replace(/\$([\s\S]*?)\$/g, function(match) {
-                mathBlocks.push(match);
-                return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
-            });
-
-            // 2. ПРЕВРАЩАЕМ MARKDOWN В HTML
             let html = marked.parse(protectedText);
 
-            // 3. ВОЗВРАЩАЕМ ФОРМУЛЫ НА МЕСТО
-            html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, function(match, id) {
-                return mathBlocks[id];
-            });
-            html = html.replace(/%%%MATH_INLINE_(\d+)%%%/g, function(match, id) {
-                return mathBlocks[id];
-            });
+            html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, (m, id) => mathBlocks[id]);
+            html = html.replace(/%%%MATH_INLINE_(\d+)%%%/g, (m, id) => mathBlocks[id]);
 
             displayArea.innerHTML = html;
 
-            // 4. РИСУЕМ ФОРМУЛЫ (Теперь они чистые и KaTeX их увидит)
             renderMathInElement(displayArea, {
                 delimiters: [
                     {left: '$$', right: '$$', display: true},
@@ -175,36 +158,26 @@
             });
         }
 
-        // --- ОСТАЛЬНАЯ ЛОГИКА ---
-        
+        // --- ФУНКЦИИ ВВОДА ---
         function insertFormula() {
             const mf = document.getElementById('math-input');
-            const textarea = document.getElementById('main-text');
-            const latex = mf.value;
-            if (!latex) return;
-            
-            // Добавляем пробелы вокруг формулы, чтобы Markdown не прилипал
-            const formulaTag = " $" + latex + "$ ";
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const text = textarea.value;
-            textarea.value = text.substring(0, start) + formulaTag + text.substring(end);
-            textarea.focus();
-            textarea.selectionStart = textarea.selectionEnd = start + formulaTag.length;
+            const ta = document.getElementById('main-text');
+            if (!mf.value) return;
+            const tag = " $" + mf.value + "$ ";
+            const start = ta.selectionStart;
+            ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionEnd);
+            ta.focus();
+            ta.selectionStart = start + tag.length;
             mf.setValue(""); 
         }
 
         function sendData() {
             const text = document.getElementById('main-text').value;
-            if (!text.trim()) {
-                tg.showPopup({title: 'Ошибка', message: 'Напишите текст запроса'});
-                return;
-            }
-            const data = JSON.stringify({ full_text: text });
-            tg.sendData(data);
+            if (!text.trim()) return tg.showPopup({message: 'Введите текст'});
+            tg.sendData(JSON.stringify({ full_text: text }));
         }
 
-        // Проверяем, пришли ли мы с ответом
+        // --- ЗАПУСК (С ЗАЩИТОЙ ОТ ОШИБОК ДЛИНЫ) ---
         const urlParams = new URLSearchParams(window.location.search);
         const answerData = urlParams.get('data');
 
@@ -212,14 +185,20 @@
             document.getElementById('input-mode').style.display = 'none';
             document.getElementById('answer-mode').style.display = 'block';
             
-            // Декодируем и запускаем нашу умную функцию
-            const decodedText = decodeURIComponent(answerData);
-            renderContent(decodedText);
+            try {
+                const decodedText = decodeURIComponent(answerData);
+                renderContent(decodedText);
+            } catch (e) {
+                // Если ссылка слишком длинная и обрезалась
+                document.getElementById('answer-content').innerHTML = 
+                `<p style="color:red">⚠️ Ошибка отображения: Ссылка была обрезана браузером.<br>
+                Попробуйте разбить вопрос на части.</p>`;
+                console.error(e);
+            }
             
         } else {
             document.getElementById('input-mode').style.display = 'flex';
         }
     </script>
-</body>
-</html>
+
 
