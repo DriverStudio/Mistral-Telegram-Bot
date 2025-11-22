@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Math Editor</title>
+    <title>Smart Math Editor</title>
     <script src="https://unpkg.com/mathlive"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -16,133 +16,181 @@
             font-family: sans-serif;
             background-color: var(--tg-theme-bg-color, #fff);
             color: var(--tg-theme-text-color, #000);
-            padding: 20px;
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            height: 100vh;
+            box-sizing: border-box;
         }
-        /* Стили для режима ввода */
-        #input-mode { display: flex; flex-direction: column; gap: 15px; }
-        
-        textarea {
+
+        /* --- РЕЖИМ ВВОДА --- */
+        #input-mode {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            gap: 10px;
+        }
+
+        label { font-weight: bold; font-size: 14px; opacity: 0.8; }
+
+        /* Основное текстовое поле */
+        #main-text {
             width: 100%;
-            height: 80px;
+            height: 120px;
             border-radius: 12px;
-            padding: 10px;
-            border: 1px solid var(--tg-theme-hint-color, #ccc);
-            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 12px;
+            border: 2px solid var(--tg-theme-hint-color, #ccc);
+            background: var(--tg-theme-secondary-bg-color, #f9f9f9);
             color: var(--tg-theme-text-color, #000);
+            font-size: 16px;
             font-family: inherit;
             resize: none;
             box-sizing: border-box;
         }
-        math-field {
-            width: 100%;
-            font-size: 24px;
+        #main-text:focus { border-color: var(--tg-theme-button-color, #3390ec); outline: none; }
+
+        /* Поле конструктора формул */
+        .math-builder {
+            border: 1px solid #eee;
             padding: 10px;
             border-radius: 12px;
-            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            background: var(--tg-theme-bg-color, #fff);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
+        math-field {
+            width: 100%;
+            font-size: 22px;
+            padding: 8px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        /* Кнопки */
+        .btn-group { display: flex; gap: 10px; }
+        
         button {
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #fff);
             border: none;
-            padding: 15px;
-            border-radius: 12px;
+            padding: 12px;
+            border-radius: 10px;
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 10px;
+            width: 100%;
         }
-        
-        /* Стили для режима ответа */
-        #answer-mode { display: none; }
+        .btn-insert {
+            background-color: var(--tg-theme-hint-color, #888);
+            color: #fff;
+        }
+        .btn-send {
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #fff);
+            height: 50px;
+            margin-top: auto; /* Прижимает кнопку к низу */
+        }
+
+        /* --- РЕЖИМ ОТВЕТА --- */
+        #answer-mode { display: none; padding-bottom: 20px;}
         .answer-box {
             background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            padding: 15px;
+            padding: 20px;
             border-radius: 12px;
             line-height: 1.6;
+            font-size: 16px;
         }
-        h3 { margin: 0 0 10px 0; opacity: 0.7; }
     </style>
 </head>
 <body>
 
     <div id="input-mode">
-        <h3>Ваш запрос:</h3>
-        <textarea id="user-text" placeholder="Например: Реши это уравнение подробно..."></textarea>
-        
-        <h3>Формула:</h3>
-        <math-field id="formula" virtual-keyboard-mode="onfocus"></math-field>
+        <label>1. Ваш текст:</label>
+        <textarea id="main-text" placeholder="Напишите задачу здесь..."></textarea>
 
-        <button onclick="sendData()">📤 Отправить боту</button>
+        <div class="math-builder">
+            <label>2. Конструктор формул:</label>
+            <math-field id="math-input" virtual-keyboard-mode="onfocus"></math-field>
+            <button class="btn-insert" onclick="insertFormula()">⬆️ Вставить формулу в текст</button>
+        </div>
+
+        <button class="btn-send" onclick="sendData()">✈️ Отправить боту</button>
     </div>
 
     <div id="answer-mode">
-        <h3>🎓 Ответ Mistral AI:</h3>
+        <h3>🎓 Решение:</h3>
         <div id="answer-content" class="answer-box"></div>
-        <button onclick="window.Telegram.WebApp.close()">Закрыть</button>
+        <br>
+        <button class="btn-send" onclick="window.Telegram.WebApp.close()">Закрыть</button>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
 
+        // Настройка Markdown
+        marked.use({ breaks: true, gfm: true });
+
+        // --- ЛОГИКА ВСТАВКИ ФОРМУЛЫ ---
+        function insertFormula() {
+            const mf = document.getElementById('math-input');
+            const textarea = document.getElementById('main-text');
+            const latex = mf.value;
+
+            if (!latex) return;
+
+            // Оборачиваем формулу в доллары
+            const formulaTag = " $" + latex + "$ ";
+
+            // Вставка в позицию курсора
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+
+            textarea.value = text.substring(0, start) + formulaTag + text.substring(end);
+            
+            // Возвращаем фокус в текстовое поле и двигаем курсор
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + formulaTag.length;
+
+            // Очищаем поле формул для новой
+            mf.setValue(""); 
+        }
+
+        // --- ЛОГИКА ОТПРАВКИ ---
+        function sendData() {
+            const text = document.getElementById('main-text').value;
+            if (!text.trim()) {
+                tg.showPopup({title: 'Ошибка', message: 'Напишите хоть что-нибудь!'});
+                return;
+            }
+            // Теперь мы шлем просто один текст (где уже смешаны слова и формулы)
+            const data = JSON.stringify({ full_text: text });
+            tg.sendData(data);
+        }
+
+        // --- ЛОГИКА ОТОБРАЖЕНИЯ ОТВЕТА ---
         const urlParams = new URLSearchParams(window.location.search);
         const answerData = urlParams.get('data');
 
         if (answerData) {
-            // --- РЕЖИМ ПРОСМОТРА ---
             document.getElementById('input-mode').style.display = 'none';
             document.getElementById('answer-mode').style.display = 'block';
             
             const decodedText = decodeURIComponent(answerData);
             const displayArea = document.getElementById('answer-content');
             
-            // 1. Сначала вставляем текст как есть (Markdown обработаем позже)
-            // Это важно, чтобы Markdown не сломал формулы до того, как их найдет KaTeX
             displayArea.innerHTML = marked.parse(decodedText);
             
-            // 2. Запускаем рендеринг формул с расширенным списком разделителей
             renderMathInElement(displayArea, {
                 delimiters: [
-                    {left: '$$', right: '$$', display: true},  // Стандарт $$...$$
-                    {left: '$', right: '$', display: false},   // Стандарт $...$
-                    {left: '\\[', right: '\\]', display: true}, // LaTeX \[...\]
-                    {left: '\\(', right: '\\)', display: false}, // LaTeX \(...\)
-                    // Иногда LLM ошибаются и присылают без слэшей, ловим и это:
-                    {left: '[', right: ']', display: true},    
-                    //{left: '(', right: ')', display: false} // Опасно включать, может задеть обычный текст
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false},
+                    {left: '\\[', right: '\\]', display: true}
                 ],
-                throwOnError: false,
-                errorColor: '#cc0000',
-                strict: false,
-                trust: true
+                throwOnError: false
             });
-
-        } else {
-            // --- РЕЖИМ ВВОДА ---
-            document.getElementById('input-mode').style.display = 'flex';
-        }
-
-        function sendData() {
-            const text = document.getElementById('user-text').value;
-            const latex = document.getElementById('formula').value;
-
-            if (!text && !latex) {
-                tg.showPopup({title: 'Ошибка', message: 'Введите текст или формулу'});
-                return;
-            }
-
-            const data = JSON.stringify({
-                text: text,
-                formula: latex
-            });
-            
-            tg.sendData(data);
         }
     </script>
 </body>
 </html>
-
