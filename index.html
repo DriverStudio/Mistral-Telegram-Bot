@@ -20,7 +20,6 @@
             display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box;
         }
 
-        /* === ФИКС ДЛЯ ФОРМУЛ === */
         math-field {
             width: 100%; font-size: 24px; padding: 8px;
             background-color: #ffffff !important; color: #000000 !important;
@@ -32,7 +31,7 @@
         .btn-send { background: var(--tg-theme-button-color, #3390ec); color: white; }
         .answer-box { background: var(--tg-theme-section-bg-color, #fff); padding: 16px; border-radius: 12px; border: 1px solid #eee; word-wrap: break-word; }
 
-        /* === СТИЛИ АДМИНКИ === */
+        /* АДМИНКА */
         #admin-mode { display: none; flex-direction: column; height: 100vh; }
         .user-list { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #ccc; }
         .user-card { 
@@ -112,15 +111,16 @@
         const adminId = params.get('adminBinId'), dataId = params.get('binId'), direct = params.get('data');
 
         if(adminId) {
+            // АДМИНКА
             document.getElementById('input-mode').classList.add('hidden');
             document.getElementById('admin-mode').style.display = 'flex';
             
-            // === ИСПРАВЛЕННАЯ ЗАГРУЗКА АДМИНКИ ===
-            fetch(`https://api.jsonbin.io/v3/b/${adminId}/latest`, {headers:{'X-Bin-Meta':'false'}})
+            // УБРАЛИ HEADERS (CORS FIX)
+            fetch(`https://api.jsonbin.io/v3/b/${adminId}/latest`)
             .then(r=>r.json())
             .then(json => {
-                // Jsonbin может вернуть { "record": { ... } } или просто { ... }
-                // Берем правильный объект с данными
+                // Разбираем структуру Jsonbin
+                // Она может быть { record: {...}, metadata: {...} }
                 const realDb = json.record || json;
                 
                 document.getElementById('loading-admin').classList.add('hidden');
@@ -128,26 +128,42 @@
                 document.getElementById('chat-container').classList.remove('hidden');
                 renderUserList(realDb);
             })
-            .catch(e => document.getElementById('loading-admin').innerHTML = "Ошибка: "+e);
+            .catch(e => document.getElementById('loading-admin').innerHTML = "Ошибка (CORS/Net): "+e);
 
         } else if(dataId || direct) {
+            // ПРОСМОТР РЕШЕНИЯ
             document.getElementById('input-mode').classList.add('hidden');
             document.getElementById('answer-mode').classList.remove('hidden');
-            if(direct) renderContent(decodeURIComponent(direct));
-            else fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`).then(r=>r.json()).then(j=>{
-                renderContent(j.record?.answer || j.answer || JSON.stringify(j));
-            });
+            
+            if(direct) {
+                renderContent(decodeURIComponent(direct));
+            } else {
+                // УБРАЛИ HEADERS
+                fetch(`https://api.jsonbin.io/v3/b/${dataId}/latest`)
+                .then(r=>r.json())
+                .then(j => {
+                    // Тут мы ищем ответ. В новом питоне мы сохраняем { "answer": "...", "query": "..." }
+                    const rec = j.record || j;
+                    const ans = rec.answer || rec; 
+                    
+                    // Если хотим показать и запрос тоже:
+                    let finalHtml = "";
+                    if(rec.query) finalHtml += `<blockquote>${rec.query}</blockquote><hr>`;
+                    finalHtml += ans;
+
+                    renderContent(finalHtml);
+                })
+                .catch(e => document.getElementById('answer-content').innerHTML="Ошибка: "+e);
+            }
         }
 
         function renderUserList(db) {
             const c = document.getElementById('users-container');
             c.innerHTML = "";
-            
-            // Фильтруем ключи, чтобы не показать системные поля (metadata, record и т.д.)
             const userIds = Object.keys(db).filter(k => k !== 'metadata' && k !== 'record' && typeof db[k] === 'object');
             
             if(userIds.length === 0) {
-                c.innerHTML = "<div style='padding:10px'>Нет данных</div>";
+                c.innerHTML = "<div style='padding:10px'>Нет данных или старая база</div>";
                 return;
             }
 
@@ -155,7 +171,6 @@
                 const u = db[uid];
                 const card = document.createElement('div');
                 card.className = 'user-card';
-                // Защита от пустого имени
                 const name = u.name ? u.name : 'Без имени';
                 card.innerHTML = `<span class="user-name">${name}</span><span class="user-id">${uid}</span>`;
                 card.onclick = () => {
@@ -170,7 +185,7 @@
         function renderChat(h) {
             const d = document.getElementById('chat-container');
             d.innerHTML = "";
-            if(!h || h.length===0) return d.innerHTML="<div style='text-align:center;margin-top:20px'>Пусто</div>";
+            if(!h || h.length===0) return d.innerHTML="<div style='text-align:center;margin-top:20px'>История пуста</div>";
             h.forEach(m => {
                 const b = document.createElement('div');
                 b.className = `msg ${m.role}`;
