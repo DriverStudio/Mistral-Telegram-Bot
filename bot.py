@@ -12,9 +12,6 @@ import threading # 🆕 Нужно для фонового сохранения
 from keep_alive import keep_alive
 import copy # 👈 ДОБАВИТЬ ВОТ ЭТО
 
-# 🆕 Импортируем apihelper для установки таймаута
-from telebot import apihelper 
-
 keep_alive()
 
 # ================= НАСТРОЙКИ =================
@@ -25,7 +22,7 @@ WEB_APP_URL = "https://driverstudio.github.io/LaTeX-Converter/"
 JSONBIN_API_KEY = "$2a$10$nh1KvXZw8oEvpKcpwn5mcusg.GwIUHn.z/dXiwtZYad70w3k4Rgym"
 
 # 👇 ВСТАВЬТЕ СЮДА ВАШ BIN_ID (из админки -> Dashboard)
-MAIN_BIN_ID = "6922d0b443b1c97be9bf9eb0"
+MAIN_BIN_ID = "6922d0b443b1c97be9bf9eb0" 
 
 # Как часто сохранять в облако (в секундах). 
 # 600 сек = 10 минут. Час (3600) рискованно для бесплатного хостинга.
@@ -35,18 +32,11 @@ SAVE_INTERVAL = 600
 client = Mistral(api_key=MISTRAL_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🚀 Устанавливаем таймаут для всех запросов к Telegram API
-# Это должно уменьшить количество ConnectionResetError
-apihelper.set_timeout(15) 
-
 MODELS = ["mistral-large-latest", "pixtral-12b-2409", "ministral-8b-latest"]
 current_model_index = 0
 BOT_START_TIME = time.time()
 TOTAL_MESSAGES = 0
 TOTAL_ERRORS = 0
-
-# --- ОБЛАЧНАЯ БАЗА ДАННЫХ (Фоновая) ---
-# ... (Остальная часть кода без изменений)
 
 # --- ОБЛАЧНАЯ БАЗА ДАННЫХ (Фоновая) ---
 
