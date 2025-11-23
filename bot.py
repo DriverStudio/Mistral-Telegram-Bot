@@ -10,6 +10,7 @@ import urllib.parse
 import requests
 import threading # 🆕 Нужно для фонового сохранения
 from keep_alive import keep_alive
+import copy # 👈 ДОБАВИТЬ ВОТ ЭТО
 
 keep_alive()
 
@@ -101,21 +102,29 @@ def switch_to_next_model():
 
 def get_history(chat_id):
     if chat_id not in user_histories:
-        user_histories[chat_id] = {"name": "Unknown", "history": []}
+        # Создаем структуру с полем saved_chats
+        user_histories[chat_id] = {
+            "name": "Unknown", 
+            "history": [], 
+            "saved_chats": {} # 🆕 Тут храним архивы: {"Название": [сообщения]}
+        }
+    # На всякий случай добавляем поле, если юзер старый
+    if "saved_chats" not in user_histories[chat_id]:
+        user_histories[chat_id]["saved_chats"] = {}
+        
     return user_histories[chat_id]["history"]
 
 def update_user_meta(message):
     chat_id = message.chat.id
     first = message.from_user.first_name or ""
     last = message.from_user.last_name or ""
-    name = f"{first} {last}".strip()
-    if not name: name = f"User {chat_id}"
+    name = f"{first} {last}".strip() or f"User {chat_id}"
     
     if chat_id not in user_histories:
-        user_histories[chat_id] = {"name": name, "history": []}
+        user_histories[chat_id] = {"name": name, "history": [], "saved_chats": {}}
     else:
         user_histories[chat_id]["name"] = name
-    save_users()
+    # save_users() -> Теперь у нас автосохранение, эту строку можно убрать
 
 # --- БЕЗОПАСНАЯ ОТПРАВКА ---
 
@@ -127,12 +136,92 @@ def safe_send_message(chat_id, text, reply_markup=None):
         except: pass
 
 def safe_edit_message(chat_id, message_id, text, reply_markup=None):
-    try:
-        bot.edit_message_text(text.replace('**', '*'), chat_id, message_id, parse_mode='Markdown', reply_markup=reply_markup)
-    except Exception as e:
-        if "message is not modified" in str(e): return
-        try: bot.edit_message_text(text, chat_id, message_id, parse_mode=None, reply_markup=reply_markup)
-        except: pass
+    # Если текст пустой или None
+    if not text: return
+
+    # Если текст влезает в лимит Телеграма (4096), отправляем как обычно
+    if len(text) < 4090:
+        try:
+            bot.edit_message_text(text.replace('**', '*'), chat_id, message_id, parse_mode='Markdown', reply_markup=reply_markup)
+        except Exception as e:
+            if "message is not modified" in str(e): return
+            try: 
+                # Если ошибка Markdown, шлем без форматирования
+                bot.edit_message_text(text, chat_id, message_id, parse_mode=None, reply_markup=reply_markup)
+            except Exception as e:
+                # Если совсем всё плохо (например, сообщение слишком длинное), пишем ошибку
+                print(f"Ошибка отправки: {e}")
+                try: bot.edit_message_text(f"⚠️ Ошибка отображения: {e}", chat_id, message_id)
+                except: pass
+    else:
+        # === ЛОГИКА ДЛЯ ДЛИННЫХ СООБЩЕНИЙ ===
+        # Если ответ длинный, мы разбиваем его
+        parts = []
+        while len(text) > 0:
+            if len(text) > 4090:
+                # Ищем перенос строки, чтобы красиво разорвать
+                part = text[:4090]
+                last_newline = part.rfind('\n')
+                if last_newline != -1:
+                    parts.append(text[:last_newline])
+                    text = text[last_newline+1:]
+                else:
+                    parts.append(text[:4090])
+                    text = text[4090:]
+            else:
+                parts.append(text)
+                text = ""
+
+        # Редактируем "часики" на первую часть
+        try:
+            bot.edit_message_text(parts[0].replace('**', '*'), chat_id, message_id, parse_mode='Markdown')
+        except:
+            bot.edit_message_text(parts[0], chat_id, message_id)
+        
+        # Остальные части шлем новыми сообщениями
+        for p in parts[1:]:
+            time.sleep(0.3) # Маленькая пауза, чтобы не спамить
+            try:
+                bot.send_message(chat_id, p.replace('**', '*'), parse_mode='Markdown')
+            except:
+                bot.send_message(chat_id, p)
+
+# --- УПРАВЛЕНИЕ СЕССИЯМИ ---
+
+def save_current_session(chat_id, name):
+    h = user_histories[chat_id]["history"]
+    if not h: return False
+    # Сохраняем текущую историю в словарь saved_chats
+    user_histories[chat_id]["saved_chats"][name] = h
+    return True
+
+def load_session(chat_id, name):
+    # Проверяем, есть ли вообще такой чат
+    if name in user_histories[chat_id]["saved_chats"]:
+        saved_data = user_histories[chat_id]["saved_chats"][name]
+        
+        # Если сохраненный чат пуст — нет смысла грузить
+        if not saved_data:
+            return False
+            
+        # ⚠️ ВАЖНО: Делаем полную копию данных (Deep Copy)
+        # Это создает новый список в памяти, отвязывая его от архива
+        user_histories[chat_id]["history"] = copy.deepcopy(saved_data)
+        
+        print(f"♻️ Восстановлен чат '{name}': {len(saved_data)} сообщений.")
+        return True
+    return False
+
+def get_sessions_kb(chat_id):
+    mk = types.InlineKeyboardMarkup(row_width=1)
+    mk.add(types.InlineKeyboardButton("💾 Сохранить текущий чат", callback_data="sess_save"))
+    mk.add(types.InlineKeyboardButton("➕ Начать новый (с чистого листа)", callback_data="sess_new"))
+    mk.add(types.InlineKeyboardButton("📂 Открыть все чаты (Web App)", callback_data="sess_open_web"))
+    
+    # ❌ УБРАНО: Генерация списка кнопок в чате
+    # ❌ УБРАНА: Неработающая кнопка "--- ВАШИ ЧАТЫ ---"
+    
+    return mk
 
 # --- ОБЛАКО ---
 
@@ -143,11 +232,51 @@ def save_answer_to_cloud(chat_id, query_text, answer_text):
     try: return requests.post(url, json=payload, headers=headers).json()['metadata']['id']
     except: return None
 
+
 def save_full_db_to_cloud():
+    print("📤 Подготовка данных для Дашборда...")
     url = 'https://api.jsonbin.io/v3/b'
-    headers = {'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_API_KEY, 'X-Bin-Private': 'false'}
-    try: return requests.post(url, json=user_histories, headers=headers).json()['metadata']['id']
-    except: return None
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY,
+        'X-Bin-Private': 'false' # ⚠️ ВАЖНО: Копия должна быть публичной, чтобы сайт её открыл
+    }
+    
+    try:
+        # Принудительно превращаем ключи пользователей в строки для JSON
+        # (в новой базе они int, а сайт может ждать string-ключи)
+        clean_data = {str(k): v for k, v in user_histories.items()}
+        
+        req = requests.post(url, json=clean_data, headers=headers)
+        if req.status_code == 200:
+            bid = req.json()['metadata']['id']
+            print(f"✅ Дашборд выгружен: {bid}")
+            return bid
+        else:
+            print(f"❌ Ошибка JSONBin: {req.text}")
+            return None
+    except Exception as e:
+        print(f"❌ Ошибка выгрузки: {e}")
+        return None
+
+def save_personal_history_to_cloud(user_id):
+    url = 'https://api.jsonbin.io/v3/b'
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY,
+        'X-Bin-Private': 'false' # Должен быть публичным для WebApp
+    }
+    
+    # Берем данные только ОДНОГО пользователя и оборачиваем в словарь с его ID
+    # Это нужно, чтобы index.html понял формат (он ждет структуру {id: data})
+    user_data = {str(user_id): user_histories.get(user_id, {})}
+    
+    try:
+        req = requests.post(url, json=user_data, headers=headers)
+        if req.status_code == 200:
+            return req.json()['metadata']['id']
+    except: pass
+    return None
 
 def ask_mistral_with_retry(chat_id, messages):
     global TOTAL_ERRORS
@@ -167,7 +296,10 @@ def ask_mistral_with_retry(chat_id, messages):
 
 def get_main_kb(uid):
     mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    mk.add(types.KeyboardButton("∫ Редактор", web_app=types.WebAppInfo(url=WEB_APP_URL)), types.KeyboardButton("🧹 Сброс"))
+    # 🆕 Добавили кнопку "🗃 Чаты"
+    mk.add(types.KeyboardButton("∫ Редактор", web_app=types.WebAppInfo(url=WEB_APP_URL)), 
+           types.KeyboardButton("🗃 Чаты")) 
+    mk.add(types.KeyboardButton("🧹 Сброс контекста")) # Переименовал для ясности
     if uid in ADMIN_IDS: mk.add(types.KeyboardButton("🛠 Админка"))
     return mk
 
@@ -192,7 +324,7 @@ def get_admin_kb():
 
 # --- АДМИНКА (CALLBACKS) ---
 
-@bot.callback_query_handler(func=lambda c: c.from_user.id in ADMIN_IDS)
+@bot.callback_query_handler(func=lambda c: c.data.startswith('admin_') and c.from_user.id in ADMIN_IDS)
 def admin_cb(c):
     global current_model_index
     
@@ -243,16 +375,53 @@ def admin_cb(c):
 
 @bot.message_handler(content_types=['web_app_data'])
 def web_data(m):
+    print(f"DEBUG: Пришли данные WebApp! RAW: {m.web_app_data.data}")
     update_user_meta(m)
     cid = m.chat.id
     
     full_request = ""
+    is_command = False # Флаг, чтобы понять, команда это или промпт
+
     try:
+        # Пытаемся разобрать JSON от сайта
         d = json.loads(m.web_app_data.data)
+        
+        # === 1. ПРОВЕРКА НА КОМАНДУ ЗАГРУЗКИ ЧАТА (НОВОЕ) ===
+        # === 1. ПРОВЕРКА НА КОМАНДУ ЗАГРУЗКИ ЧАТА ===
+        if d.get('action') == 'load_session':
+            session_name = d.get('name')
+            
+            if load_session(cid, session_name):
+                # Считаем, сколько сообщений вспомнили
+                msg_count = len(user_histories[cid]["history"])
+                
+                # Принудительно сохраняем в облако ПРЯМО СЕЙЧАС
+                save_users_to_cloud()
+                
+                # Пишем пользователю подробный отчет
+                safe_send_message(
+                    cid, 
+                    f"📂 **Чат «{session_name}» загружен!**\n"
+                    f"🧠 Восстановлено сообщений: {msg_count}\n"
+                    f"Контекст активен. Можете продолжать тему.", 
+                    reply_markup=get_sessions_kb(cid)
+                )
+            else:
+                safe_send_message(cid, "❌ Ошибка: Чат пуст или не найден.", reply_markup=get_sessions_kb(cid))
+            
+            return # 🛑 ВАЖНО: Выходим из функции, не отправляем это в нейросеть
+            
+        # === 2. ЕСЛИ ЭТО ОБЫЧНЫЙ ЗАПРОС ===
         full_request = d.get('full_text') or f"{d.get('text','')} $${d.get('formula','')}$$"
-    except: full_request = m.web_app_data.data
+
+    except:
+        # Если пришел не JSON, а обычный текст
+        full_request = m.web_app_data.data
+
+    # Если мы дошли сюда, значит это НЕ команда загрузки, а запрос к ИИ
     
     bot.send_message(cid, f"📥 **Запрос:**\n{full_request}", parse_mode=None)
+    
     h = get_history(cid)
     h.append({"role": "user", "content": f"""
     Пользователь прислал математический запрос.
@@ -287,7 +456,10 @@ def web_data(m):
                 mk.add(types.InlineKeyboardButton("👀 Смотреть (Cloud)", web_app=types.WebAppInfo(url=f"{WEB_APP_URL}?binId={bid}")))
                 safe_send_message(cid, "✅ Решение (Cloud):", reply_markup=mk)
             else: safe_send_message(cid, "❌ Сбой облака. Текст:\n"+ans)
-        save_users()
+        
+        # Используем новую облачную функцию сохранения
+        save_users_to_cloud() 
+        
     except Exception as e: safe_send_message(cid, f"❌ Ошибка: {e}")
 
 # --- ТЕКСТ ---
@@ -308,24 +480,109 @@ def clr(m):
     save_users()
     bot.send_message(m.chat.id, "🧠 Очищено")
 
+# Обработчик кнопки "🗃 Чаты"
+@bot.message_handler(func=lambda m: m.text == "🗃 Чаты")
+def sessions_menu(m):
+    msg = "🗂 **Управление диалогами**\n\nЗдесь вы можете сохранить текущий разговор или вернуться к старой теме, чтобы бот вспомнил контекст."
+    safe_send_message(m.chat.id, msg, reply_markup=get_sessions_kb(m.chat.id))
+
+# Callback'и для кнопок меню чатов
+@bot.callback_query_handler(func=lambda c: c.data.startswith("sess_"))
+def session_callbacks(c):
+    cid = c.message.chat.id
+    action = c.data
+    
+    if action == "sess_save":
+        msg = bot.send_message(cid, "✏️ Введите название для этого чата:", reply_markup=types.ForceReply())
+        bot.register_next_step_handler(msg, process_save_name)
+    
+    elif action == "sess_new":
+        # ❌ УБРАНО: Сохранение в "Auto..."
+        
+        # Просто очищаем историю
+        user_histories[cid]["history"] = []
+        bot.answer_callback_query(c.id, "Новый контекст создан!")
+        
+        safe_edit_message(cid, c.message.message_id, "✨ **Начат новый диалог.**\nКонтекст очищен. Можете начинать новую тему.", reply_markup=get_sessions_kb(cid))
+        save_users_to_cloud() # Сохраняем очистку в облако
+        
+        user_histories[cid]["history"] = []
+        bot.answer_callback_query(c.id, "Новый контекст создан!")
+        safe_edit_message(cid, c.message.message_id, "✨ **Начат новый диалог.**\nКонтекст очищен. Старый сохранен в авто-сохранениях.", reply_markup=get_sessions_kb(cid))
+        save_users_to_cloud() # Сразу в облако
+
+    elif action.startswith("sess_load_"):
+        name = action.replace("sess_load_", "")
+        if load_session(cid, name):
+            bot.answer_callback_query(c.id, f"Загружен: {name}")
+            safe_edit_message(cid, c.message.message_id, f"📂 **Чат «{name}» восстановлен!**\nБот теперь помнит всё, что было в том разговоре.", reply_markup=get_sessions_kb(cid))
+            save_users_to_cloud()
+        else:
+            bot.answer_callback_query(c.id, "Ошибка загрузки", show_alert=True)
+
+    if action == "sess_open_web":
+        bot.answer_callback_query(c.id, "Подготовка данных...")
+        
+        # 1. Загружаем данные юзера в облако
+        bin_id = save_personal_history_to_cloud(cid)
+        
+        if bin_id:
+            # 2. Создаем ссылку на Web App с параметром adminBinId
+            # (Мы используем adminBinId, так как он заставляет сайт отрисовать интерфейс выбора чатов)
+            web_url = f"{WEB_APP_URL}?adminBinId={bin_id}"
+            
+            mk = types.InlineKeyboardMarkup()
+            mk.add(types.InlineKeyboardButton("🚀 Открыть мои чаты", web_app=types.WebAppInfo(url=web_url)))
+            
+            # Возвращаем кнопку "Назад", чтобы меню не исчезало насовсем
+            mk.add(types.InlineKeyboardButton("🔙 Меню", callback_data="sess_back"))
+            
+            safe_edit_message(cid, c.message.message_id, "✅ **Данные готовы!**\nНажмите кнопку ниже, чтобы управлять чатами в графическом интерфейсе.", reply_markup=mk)
+        else:
+            bot.answer_callback_query(c.id, "Ошибка облака ☁️", show_alert=True)
+
+    elif action == "sess_back":
+        # Кнопка возврата в обычное меню
+        safe_edit_message(cid, c.message.message_id, "🗂 **Управление диалогами**", reply_markup=get_sessions_kb(cid))
+
+def process_save_name(m):
+    cid = m.chat.id
+    name = m.text[:20] # Ограничим длину имени
+    if save_current_session(cid, name):
+        safe_send_message(cid, f"✅ Чат сохранен как **{name}**!", reply_markup=get_main_kb(cid))
+        save_users_to_cloud()
+    else:
+        safe_send_message(cid, "❌ Чат пуст, сохранять нечего.")
+
 @bot.message_handler(func=lambda m: True)
 def txt(m):
     global TOTAL_MESSAGES
-    TOTAL_MESSAGES+=1
+    TOTAL_MESSAGES += 1
     update_user_meta(m)
     cid = m.chat.id
+    
+    # Ставим часики
     w = bot.reply_to(m, "⏳")
     
     h = get_history(cid)
     h.append({"role": "user", "content": m.text})
+    
     try:
         ans = ask_mistral_with_retry(cid, h)
         h.append({"role": "assistant", "content": ans})
+        
+        # Используем новую умную функцию отправки
         safe_edit_message(cid, w.message_id, ans)
-        save_users()
+        
+        # (Если используете старое сохранение, оставьте, если новое облачное — оно само сохранится)
+        save_users() 
+        
     except Exception as e:
         print(f"Handler Error: {e}")
-        bot.edit_message_text(f"Error: {e}", cid, w.message_id)
+        # 👇 ТЕПЕРЬ БОТ СКАЖЕТ ВАМ, В ЧЕМ ОШИБКА, ВМЕСТО ВЕЧНЫХ ЧАСИКОВ
+        try:
+            bot.edit_message_text(f"❌ Сбой: {e}", cid, w.message_id)
+        except: pass
 
 if __name__ == '__main__':
     print("🚀 Бот запущен...")
