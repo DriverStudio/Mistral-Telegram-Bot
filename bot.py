@@ -22,7 +22,7 @@ WEB_APP_URL = "https://driverstudio.github.io/LaTeX-Converter/"
 JSONBIN_API_KEY = "$2a$10$nh1KvXZw8oEvpKcpwn5mcusg.GwIUHn.z/dXiwtZYad70w3k4Rgym"
 
 # 👇 ВСТАВЬТЕ СЮДА ВАШ BIN_ID (из админки -> Dashboard)
-MAIN_BIN_ID = "ВСТАВИТЬ_СЮДА_ВАШ_ID_БИНА" 
+MAIN_BIN_ID = "6922d0b443b1c97be9bf9eb0" 
 
 # Как часто сохранять в облако (в секундах). 
 # 600 сек = 10 минут. Час (3600) рискованно для бесплатного хостинга.
@@ -356,7 +356,7 @@ def admin_cb(c):
 
     elif c.data == "admin_stats":
         up = str(datetime.timedelta(seconds=int(time.time()-BOT_START_TIME)))
-        safe_edit_message(c.message.chat.id, c.message.message_id, f"📊 **Стат:**\n⏱ {up}\n✉️ {TOTAL_MESSAGES}\n👥 {len(user_histories)}", reply_markup=get_admin_inline_keyboard())
+        safe_edit_message(c.message.chat.id, c.message.message_id, f"📊 **Стат:**\n⏱ {up}\n✉️ {TOTAL_MESSAGES}\n👥 {len(user_histories)}", reply_markup=get_admin_kb()) # Исправил get_admin_inline_keyboard() на get_admin_kb()
 
     elif c.data == "admin_restart":
         bot.answer_callback_query(c.id, "Перезагрузка...")
@@ -371,55 +371,64 @@ def admin_cb(c):
     elif c.data == "admin_close":
         bot.delete_message(c.message.chat.id, c.message.message_id)
 
-# --- WEB APP ---
+# --- ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ (Общая для WebApp и Paste) ---
+
+def handle_load_session_command(cid, d):
+    """Общая логика для обработки команды load_session"""
+    session_name = d.get('name')
+    
+    if not session_name:
+        safe_send_message(cid, "❌ Ошибка: Не указано имя чата для загрузки.", reply_markup=get_sessions_kb(cid))
+        return
+        
+    print(f"DEBUG: Получена команда загрузки чата: '{session_name}' для user {cid}")
+
+    if load_session(cid, session_name):
+        msg_count = len(user_histories[cid]["history"])
+        save_users_to_cloud()
+        safe_send_message(
+            cid, 
+            f"📂 **Чат «{session_name}» загружен!**\n"
+            f"🧠 Восстановлено сообщений: {msg_count}\n"
+            f"Контекст активен. Можете продолжать тему.", 
+            reply_markup=get_sessions_kb(cid)
+        )
+    else:
+        safe_send_message(cid, "❌ Ошибка: Чат пуст или не найден.", reply_markup=get_sessions_kb(cid))
+
+# --- ОБРАБОТЧИКИ СООБЩЕНИЙ ---
 
 @bot.message_handler(content_types=['web_app_data'])
 def web_data(m):
+    # Этот обработчик ловит данные, отправленные через tg.sendData()
     print(f"DEBUG: Пришли данные WebApp! RAW: {m.web_app_data.data}")
     update_user_meta(m)
     cid = m.chat.id
     
-    full_request = ""
-    is_command = False # Флаг, чтобы понять, команда это или промпт
-
     try:
-        # Пытаемся разобрать JSON от сайта
         d = json.loads(m.web_app_data.data)
         
         # === 1. ПРОВЕРКА НА КОМАНДУ ЗАГРУЗКИ ЧАТА (НОВОЕ) ===
-        # === 1. ПРОВЕРКА НА КОМАНДУ ЗАГРУЗКИ ЧАТА ===
         if d.get('action') == 'load_session':
-            session_name = d.get('name')
-            
-            if load_session(cid, session_name):
-                # Считаем, сколько сообщений вспомнили
-                msg_count = len(user_histories[cid]["history"])
-                
-                # Принудительно сохраняем в облако ПРЯМО СЕЙЧАС
-                save_users_to_cloud()
-                
-                # Пишем пользователю подробный отчет
-                safe_send_message(
-                    cid, 
-                    f"📂 **Чат «{session_name}» загружен!**\n"
-                    f"🧠 Восстановлено сообщений: {msg_count}\n"
-                    f"Контекст активен. Можете продолжать тему.", 
-                    reply_markup=get_sessions_kb(cid)
-                )
-            else:
-                safe_send_message(cid, "❌ Ошибка: Чат пуст или не найден.", reply_markup=get_sessions_kb(cid))
-            
+            handle_load_session_command(cid, d)
             return # 🛑 ВАЖНО: Выходим из функции, не отправляем это в нейросеть
             
         # === 2. ЕСЛИ ЭТО ОБЫЧНЫЙ ЗАПРОС ===
         full_request = d.get('full_text') or f"{d.get('text','')} $${d.get('formula','')}$$"
 
-    except:
-        # Если пришел не JSON, а обычный текст
+    except json.JSONDecodeError:
+        # Если пришел не JSON, а обычный текст, это не WebApp-команда
+        full_request = m.web_app_data.data
+    except Exception as e:
+        # Общая ошибка парсинга WebApp-данных
+        print(f"ERROR: Ошибка парсинга WebApp data: {e}. Data: {m.web_app_data.data}")
         full_request = m.web_app_data.data
 
+
     # Если мы дошли сюда, значит это НЕ команда загрузки, а запрос к ИИ
-    
+    if not full_request or full_request == "null":
+        return # Игнорируем пустой запрос
+
     bot.send_message(cid, f"📥 **Запрос:**\n{full_request}", parse_mode=None)
     
     h = get_history(cid)
@@ -462,7 +471,40 @@ def web_data(m):
         
     except Exception as e: safe_send_message(cid, f"❌ Ошибка: {e}")
 
-# --- ТЕКСТ ---
+# 🆕 Обработчик для скопированной команды (Copy-Paste Fallback)
+@bot.message_handler(func=lambda m: m.text and m.text.startswith('{"action":"load_session"'))
+def handle_pasted_command(m):
+    """Ловит скопированный JSON-текст для загрузки чата."""
+    cid = m.chat.id
+    update_user_meta(m)
+    
+    try:
+        # Парсим скопированный текст
+        d = json.loads(m.text)
+        
+        # Проверяем, что это действительно команда load_session
+        if d.get('action') == 'load_session':
+            # Удаляем команду из чата для чистоты (но это может не работать)
+            try: bot.delete_message(cid, m.message_id)
+            except: pass
+            
+            # Вызываем общую логику обработки
+            handle_load_session_command(cid, d)
+            return
+            
+    except json.JSONDecodeError:
+        # Если не смогли распарсить как JSON, это обычное сообщение
+        pass
+    except Exception as e:
+        print(f"ERROR: Ошибка обработки скопированной команды: {e}")
+        safe_send_message(cid, "❌ Ошибка при обработке команды. Попробуйте еще раз.")
+        
+    # Если это не команда, отдаем управление основному обработчику
+    # (Но поскольку этот обработчик идет до txt, он отсечет только свой формат)
+    txt(m)
+
+
+# --- ТЕКСТ (Основной обработчик) ---
 
 @bot.message_handler(commands=['start', 'reset'])
 def start(m):
@@ -474,7 +516,7 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text=="🛠 Админка" and m.from_user.id in ADMIN_IDS)
 def adm(m): bot.send_message(m.chat.id, "⚙️ Панель:", reply_markup=get_admin_kb())
 
-@bot.message_handler(func=lambda m: m.text=="🧹 Сброс")
+@bot.message_handler(func=lambda m: m.text=="🧹 Сброс контекста")
 def clr(m): 
     if m.chat.id in user_histories: user_histories[m.chat.id]["history"]=[]
     save_users()
@@ -497,7 +539,6 @@ def session_callbacks(c):
         bot.register_next_step_handler(msg, process_save_name)
     
     elif action == "sess_new":
-        # ❌ УБРАНО: Сохранение в "Auto..."
         
         # Просто очищаем историю
         user_histories[cid]["history"] = []
@@ -505,11 +546,6 @@ def session_callbacks(c):
         
         safe_edit_message(cid, c.message.message_id, "✨ **Начат новый диалог.**\nКонтекст очищен. Можете начинать новую тему.", reply_markup=get_sessions_kb(cid))
         save_users_to_cloud() # Сохраняем очистку в облако
-        
-        user_histories[cid]["history"] = []
-        bot.answer_callback_query(c.id, "Новый контекст создан!")
-        safe_edit_message(cid, c.message.message_id, "✨ **Начат новый диалог.**\nКонтекст очищен. Старый сохранен в авто-сохранениях.", reply_markup=get_sessions_kb(cid))
-        save_users_to_cloud() # Сразу в облако
 
     elif action.startswith("sess_load_"):
         name = action.replace("sess_load_", "")
